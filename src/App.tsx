@@ -10,7 +10,13 @@ import {
   TrendingUp, 
   Info, 
   Bell,
-  X
+  X,
+  Play,
+  ArrowRight,
+  ArrowLeft,
+  RotateCcw,
+  Plus,
+  Minus
 } from 'lucide-react';
 
 // CONFIGURAÇÕES
@@ -24,6 +30,9 @@ interface Exercise {
   type: 'base' | 'comp';
   instructions: string[];
   avoid: string;
+  isTimed: boolean;
+  duration?: number;
+  targetReps?: string;
 }
 
 interface DailyRecord {
@@ -32,91 +41,10 @@ interface DailyRecord {
 }
 
 type History = Record<string, DailyRecord>;
+type Scene = 'dashboard' | 'workout' | 'summary';
+type WorkoutPhase = 'preparation' | 'active' | 'rest';
 
 // --- Sub-componentes ---
-
-interface ExerciseCardProps {
-  exercise: Exercise;
-  isDone: boolean;
-  onToggle: (id: string) => void;
-}
-
-const ExerciseCard: React.FC<ExerciseCardProps> = ({ exercise, isDone, onToggle }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  return (
-    <motion.div 
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`card-transition bg-slate-800 rounded-xl border border-slate-700 overflow-hidden ${isDone ? 'opacity-60 grayscale-[0.5]' : ''}`}
-    >
-      <div className="p-4 flex justify-between items-center">
-        <div className="flex-1 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-bold ${exercise.type === 'base' ? 'text-indigo-400' : 'text-emerald-400'} uppercase tracking-widest`}>
-              {exercise.type === 'base' ? 'Essencial' : 'Complementar'}
-            </span>
-            {isExpanded ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
-          </div>
-          <h3 className="font-bold text-slate-100 flex items-center gap-2">
-            {exercise.name}
-            <Info size={14} className="text-slate-500 hover:text-indigo-400" />
-          </h3>
-          <p className="text-sm text-slate-400">{exercise.desc}</p>
-        </div>
-        <button 
-          onClick={() => onToggle(exercise.id)}
-          className={`ml-4 w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-            isDone 
-              ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' 
-              : 'border-indigo-500 hover:bg-indigo-500/20 text-transparent'
-          }`}
-        >
-          <AnimatePresence mode="wait">
-            {isDone && (
-              <motion.div
-                initial={{ scale: 0, rotate: -45 }}
-                animate={{ scale: 1, rotate: 0 }}
-                exit={{ scale: 0 }}
-              >
-                <CheckCircle2 size={24} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </button>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="px-4 pb-4 border-t border-slate-700/50 bg-slate-800/50"
-          >
-            <div className="pt-4 space-y-3">
-              <div>
-                <h4 className="text-xs font-bold text-indigo-400 uppercase mb-1">Passo a Passo:</h4>
-                <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
-                  {exercise.instructions.map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="bg-amber-900/20 border border-amber-900/50 p-2 rounded-lg">
-                <h4 className="text-xs font-bold text-amber-400 uppercase flex items-center gap-1">
-                  <AlertCircle size={12} /> O que evitar:
-                </h4>
-                <p className="text-xs text-amber-200/80 mt-1">{exercise.avoid}</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-};
 
 interface PainScaleProps {
   painLevel: number;
@@ -182,15 +110,12 @@ const PainTrend: React.FC<PainTrendProps> = ({ history }) => {
       </h3>
       <div className="relative h-[120px] w-full flex items-end justify-center">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
-          {/* Grid lines */}
           {[0, 5, 10].map(v => {
             const y = height - (v * (height - padding * 2)) / maxPain - padding;
             return (
               <line key={v} x1={padding} y1={y} x2={width - padding} y2={y} stroke="#334155" strokeWidth="1" strokeDasharray="4" />
             );
           })}
-          
-          {/* Line */}
           <polyline
             fill="none"
             stroke="#6366f1"
@@ -199,8 +124,6 @@ const PainTrend: React.FC<PainTrendProps> = ({ history }) => {
             strokeLinejoin="round"
             points={points}
           />
-          
-          {/* Dots */}
           {last7Days.map((d, i) => {
             const x = (i * (width - padding * 2)) / 6 + padding;
             const y = height - (d.value * (height - padding * 2)) / maxPain - padding;
@@ -219,88 +142,54 @@ const PainTrend: React.FC<PainTrendProps> = ({ history }) => {
   );
 };
 
-const IsometricTimer: React.FC = () => {
-  const [timeLeft, setTimeLeft] = useState(45);
-  const [isActive, setIsActive] = useState(false);
-  const totalTime = 45;
+// --- Workout View Components ---
 
-  useEffect(() => {
-    let interval: number | undefined;
-    if (isActive && timeLeft > 0) {
-      interval = window.setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
-      setIsActive(false);
-      alert("Tempo concluído!");
-    }
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft]);
+interface CircularProgressProps {
+  progress: number; // 0 to 100
+  timeLeft: number;
+  isWarning: boolean;
+}
 
-  const toggleTimer = () => setIsActive(!isActive);
-  const resetTimer = () => {
-    setIsActive(false);
-    setTimeLeft(45);
-  };
-
-  const progress = (timeLeft / totalTime) * 100;
-  const radius = 40;
+const CircularProgress: React.FC<CircularProgressProps> = ({ progress, timeLeft, isWarning }) => {
+  const radius = 90;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (progress / 100) * circumference;
 
   return (
-    <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative w-12 h-12">
-            <svg className="w-full h-full -rotate-90">
-              <circle
-                cx="24"
-                cy="24"
-                r={radius / 2}
-                fill="none"
-                stroke="#334155"
-                strokeWidth="4"
-              />
-              <motion.circle
-                cx="24"
-                cy="24"
-                r={radius / 2}
-                fill="none"
-                stroke="#6366f1"
-                strokeWidth="4"
-                strokeDasharray={circumference / 2}
-                animate={{ strokeDashoffset: offset / 2 }}
-                transition={{ duration: 1, ease: "linear" }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono font-bold text-indigo-400">
-              {timeLeft}s
-            </div>
-          </div>
-          <span className="text-sm font-bold text-slate-400 uppercase">Timer Isométrico</span>
-        </div>
-        <div className="flex gap-2">
-          <button 
-            onClick={toggleTimer} 
-            className={`${isActive ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-4 py-1 rounded-md text-sm font-bold transition-colors flex items-center gap-2`}
-          >
-            {isActive ? <X size={16} /> : <Clock size={16} />}
-            {isActive ? 'Pausar' : timeLeft < 45 ? 'Retomar' : 'Iniciar'}
-          </button>
-          <button 
-            onClick={resetTimer} 
-            className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded-md text-sm transition-colors"
-          >
-            ↺
-          </button>
-        </div>
+    <div className="relative w-64 h-64 flex items-center justify-center">
+      <svg className="w-full h-full -rotate-90">
+        <circle
+          cx="128"
+          cy="128"
+          r={radius}
+          fill="none"
+          stroke="#1e293b"
+          strokeWidth="12"
+        />
+        <motion.circle
+          cx="128"
+          cy="128"
+          r={radius}
+          fill="none"
+          stroke={isWarning ? "#ef4444" : "#6366f1"}
+          strokeWidth="12"
+          strokeDasharray={circumference}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1, ease: "linear" }}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center">
+        <span className={`text-6xl font-mono font-black transition-colors ${isWarning ? 'text-red-500' : 'text-white'}`}>
+          {timeLeft}
+        </span>
+        <span className="text-slate-500 font-bold uppercase tracking-widest text-xs mt-2">segundos</span>
       </div>
     </div>
   );
 };
 
-// --- Componente Principal ---
+// --- Main App Component ---
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<History>(() => {
@@ -314,6 +203,14 @@ const App: React.FC = () => {
 
   const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [appScene, setAppScene] = useState<Scene>('dashboard');
+  
+  // Workout State
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [workoutPhase, setWorkoutPhase] = useState<WorkoutPhase>('preparation');
+  const [workoutTimer, setWorkoutTimer] = useState(10);
+  const [repCount, setRepCount] = useState(0);
+  const [completedInWorkout, setCompletedInWorkout] = useState<string[]>([]);
 
   const todayKey = new Date().toISOString().split('T')[0];
   const currentRecord = history[todayKey] || { pain: 0, exercises: [] };
@@ -383,6 +280,8 @@ const App: React.FC = () => {
         desc: '3 séries de 10–15 reps', 
         obs: 'Fase excêntrica: descida lenta', 
         type: 'base',
+        isTimed: false,
+        targetReps: '10-15',
         instructions: [
           'Segure a barra flexível verticalmente com a mão afetada.',
           'Segure a parte superior com a outra mão (palma para fora).',
@@ -397,6 +296,8 @@ const App: React.FC = () => {
         desc: '3 séries de 12–15 reps', 
         obs: 'Subir com ajuda, descer controlado', 
         type: 'base',
+        isTimed: false,
+        targetReps: '12-15',
         instructions: [
           'Apoie o antebraço em uma mesa com o punho para fora.',
           'Use a mão saudável para levantar o peso.',
@@ -413,8 +314,10 @@ const App: React.FC = () => {
           id: 'farmer', 
           name: "Farmer's Hold", 
           desc: '3–4 séries de 30–45 seg', 
-          obs: 'Isométrico - Use o Timer abaixo', 
+          obs: 'Isométrico', 
           type: 'comp',
+          isTimed: true,
+          duration: 45,
           instructions: [
             'Segure um peso pesado ao lado do corpo com o braço estendido.',
             'Mantenha a postura ereta e o punho neutro.',
@@ -428,6 +331,8 @@ const App: React.FC = () => {
           desc: '2–3 séries de 10–15 reps', 
           obs: 'Manter braços em 90°', 
           type: 'comp',
+          isTimed: false,
+          targetReps: '10-15',
           instructions: [
             'Encoste os antebraços na parede em um ângulo de 90°.',
             'Deslize os braços para cima mantendo o contato com a parede.',
@@ -441,6 +346,8 @@ const App: React.FC = () => {
           desc: '2–3 séries de 12–15 reps', 
           obs: 'Cotovelo colado ao corpo', 
           type: 'comp',
+          isTimed: false,
+          targetReps: '12-15',
           instructions: [
             'Segure um elástico ou halter leve.',
             'Mantenha o cotovelo colado ao tronco em 90°.',
@@ -453,6 +360,84 @@ const App: React.FC = () => {
     return list;
   }, [isDayB, tylerVariation]);
 
+  // Workout Logic
+  useEffect(() => {
+    let interval: number | undefined;
+    if (appScene === 'workout' && workoutPhase !== 'active' || (workoutPhase === 'active' && exercises[currentExerciseIndex]?.isTimed)) {
+      interval = window.setInterval(() => {
+        setWorkoutTimer(prev => {
+          if (prev <= 1) {
+            handleWorkoutStepComplete();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [appScene, workoutPhase, currentExerciseIndex, exercises]);
+
+  const handleWorkoutStepComplete = () => {
+    if (workoutPhase === 'preparation') {
+      setWorkoutPhase('active');
+      const ex = exercises[currentExerciseIndex];
+      setWorkoutTimer(ex.isTimed ? (ex.duration || 45) : 0);
+    } else if (workoutPhase === 'active') {
+      setCompletedInWorkout(prev => [...prev, exercises[currentExerciseIndex].id]);
+      if (currentExerciseIndex < exercises.length - 1) {
+        setWorkoutPhase('rest');
+        setWorkoutTimer(15);
+      } else {
+        setAppScene('summary');
+      }
+    } else if (workoutPhase === 'rest') {
+      setCurrentExerciseIndex(prev => prev + 1);
+      setWorkoutPhase('active');
+      const ex = exercises[currentExerciseIndex + 1];
+      setWorkoutTimer(ex.isTimed ? (ex.duration || 45) : 0);
+    }
+  };
+
+  const startWorkout = () => {
+    setCurrentExerciseIndex(0);
+    setWorkoutPhase('preparation');
+    setWorkoutTimer(10);
+    setCompletedInWorkout([]);
+    setAppScene('workout');
+  };
+
+  const nextStep = () => {
+    if (workoutPhase === 'preparation') {
+      setWorkoutPhase('active');
+      const ex = exercises[currentExerciseIndex];
+      setWorkoutTimer(ex.isTimed ? (ex.duration || 45) : 0);
+    } else if (workoutPhase === 'active') {
+      handleWorkoutStepComplete();
+    } else if (workoutPhase === 'rest') {
+      handleWorkoutStepComplete();
+    }
+  };
+
+  const prevStep = () => {
+    if (currentExerciseIndex > 0) {
+      setCurrentExerciseIndex(prev => prev - 1);
+      setWorkoutPhase('active');
+      const ex = exercises[currentExerciseIndex - 1];
+      setWorkoutTimer(ex.isTimed ? (ex.duration || 45) : 0);
+    }
+  };
+
+  const finishWorkout = () => {
+    setHistory(prev => ({
+      ...prev,
+      [todayKey]: {
+        ...currentRecord,
+        exercises: Array.from(new Set([...currentRecord.exercises, ...completedInWorkout]))
+      }
+    }));
+    setAppScene('dashboard');
+  };
+
   const progress = exercises.length > 0 
     ? Math.round((currentRecord.exercises.length / exercises.length) * 100) 
     : 0;
@@ -463,20 +448,6 @@ const App: React.FC = () => {
       [todayKey]: {
         ...currentRecord,
         pain: val
-      }
-    }));
-  };
-
-  const toggleComplete = (id: string) => {
-    const newExercises = currentRecord.exercises.includes(id)
-      ? currentRecord.exercises.filter(i => i !== id)
-      : [...currentRecord.exercises, id];
-    
-    setHistory(prev => ({
-      ...prev,
-      [todayKey]: {
-        ...currentRecord,
-        exercises: newExercises
       }
     }));
   };
@@ -504,99 +475,315 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="max-w-md mx-auto space-y-6 pb-12">
-      <header className="text-center py-6 relative">
-        <div className="absolute right-0 top-6">
-          <button 
-            onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-            className={`p-2 rounded-full transition-colors ${notificationsEnabled ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-500 bg-slate-800'}`}
-            title="Lembretes Diários"
-          >
-            <Bell size={20} />
-          </button>
-        </div>
-        <h1 className="text-2xl font-[800] text-indigo-400 uppercase tracking-tighter">FisioCheck</h1>
-        <p className="text-slate-400 text-sm">
-          {new Date().toLocaleDateString('pt-BR', { 
-            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
-          })}
-        </p>
-      </header>
-
-      <AnimatePresence>
-        {aiRecommendation && (
+    <div className="min-h-screen bg-[#0f172a] text-slate-200">
+      <AnimatePresence mode="wait">
+        {appScene === 'dashboard' && (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-red-900/30 border border-red-500/50 p-4 rounded-xl flex gap-3 items-start"
+            key="dashboard"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="max-w-md mx-auto space-y-6 p-4 pb-12"
           >
-            <AlertCircle className="text-red-400 shrink-0" size={20} />
-            <div>
-              <h4 className="text-xs font-bold text-red-400 uppercase mb-1">Recomendação da IA</h4>
-              <p className="text-sm text-red-100/90 leading-relaxed">{aiRecommendation}</p>
-              <button 
-                onClick={() => setAiRecommendation(null)}
-                className="text-[10px] font-bold text-red-400 mt-2 uppercase hover:underline"
+            <header className="text-center py-6 relative">
+              <div className="absolute right-0 top-6">
+                <button 
+                  onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                  className={`p-2 rounded-full transition-colors ${notificationsEnabled ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-500 bg-slate-800'}`}
+                  title="Lembretes Diários"
+                >
+                  <Bell size={20} />
+                </button>
+              </div>
+              <h1 className="text-2xl font-[800] text-indigo-400 uppercase tracking-tighter">FisioCheck</h1>
+              <p className="text-slate-400 text-sm">
+                {new Date().toLocaleDateString('pt-BR', { 
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
+                })}
+              </p>
+            </header>
+
+            <AnimatePresence>
+              {aiRecommendation && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="bg-red-900/30 border border-red-500/50 p-4 rounded-xl flex gap-3 items-start"
+                >
+                  <AlertCircle className="text-red-400 shrink-0" size={20} />
+                  <div>
+                    <h4 className="text-xs font-bold text-red-400 uppercase mb-1">Recomendação da IA</h4>
+                    <p className="text-sm text-red-100/90 leading-relaxed">{aiRecommendation}</p>
+                    <button 
+                      onClick={() => setAiRecommendation(null)}
+                      className="text-[10px] font-bold text-red-400 mt-2 uppercase hover:underline"
+                    >
+                      Entendido
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="bg-slate-800 border-l-4 border-indigo-500 p-4 rounded-r-xl shadow-lg">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold">
+                    {isDayB ? "Protocolo B (Completo)" : "Protocolo A (Base)"}
+                  </h2>
+                  <p className="text-sm text-slate-400">
+                    {isDayB ? "Base + Exercícios Complementares" : "Foco nos exercícios base"}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="bg-indigo-900 text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                    {progress}%
+                  </span>
+                </div>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-1.5 mt-4 overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  className="bg-indigo-500 h-1.5 rounded-full"
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                ></motion.div>
+              </div>
+            </div>
+
+            <PainScale painLevel={currentRecord.pain} onSetPain={setPainLevel} />
+
+            <PainTrend history={history} />
+
+            <div className="flex flex-col items-center py-8">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={startWorkout}
+                className="w-48 h-48 rounded-full bg-indigo-600 shadow-[0_0_30px_rgba(99,102,241,0.4)] flex flex-col items-center justify-center gap-2 border-4 border-indigo-400"
               >
-                Entendido
+                <Play size={48} fill="currentColor" />
+                <span className="font-black uppercase tracking-tighter text-lg">Iniciar Treino</span>
+              </motion.button>
+              <p className="text-slate-500 text-xs mt-6 uppercase font-bold tracking-widest">
+                {exercises.length} exercícios hoje
+              </p>
+            </div>
+
+            <button 
+              onClick={resetDailyProgress} 
+              className="w-full py-3 text-slate-500 text-xs font-semibold hover:text-slate-300 transition-colors"
+            >
+              LIMPAR PROGRESSO DE HOJE
+            </button>
+          </motion.div>
+        )}
+
+        {appScene === 'workout' && (
+          <motion.div 
+            key="workout"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="fixed inset-0 z-50 bg-[#020617] flex flex-col"
+          >
+            {/* Header */}
+            <div className="p-6 flex justify-between items-center">
+              <button onClick={() => setAppScene('dashboard')} className="text-slate-500 hover:text-white">
+                <X size={24} />
+              </button>
+              <div className="flex gap-1">
+                {exercises.map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={`h-1 w-8 rounded-full transition-colors ${i === currentExerciseIndex ? 'bg-indigo-500' : i < currentExerciseIndex ? 'bg-emerald-500' : 'bg-slate-800'}`}
+                  />
+                ))}
+              </div>
+              <div className="w-6" />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+              <AnimatePresence mode="wait">
+                {workoutPhase === 'preparation' && (
+                  <motion.div
+                    key="prep"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.2 }}
+                    className="space-y-8"
+                  >
+                    <h2 className="text-indigo-400 font-black uppercase tracking-widest text-xl">Prepare-se</h2>
+                    <div className="text-8xl font-black text-white">{workoutTimer}</div>
+                    <div>
+                      <p className="text-slate-400 text-sm uppercase font-bold mb-2">Primeiro exercício:</p>
+                      <h3 className="text-2xl font-bold">{exercises[0].name}</h3>
+                    </div>
+                  </motion.div>
+                )}
+
+                {workoutPhase === 'active' && (
+                  <motion.div
+                    key="active"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="w-full max-w-sm space-y-8"
+                  >
+                    <div>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full ${exercises[currentExerciseIndex].type === 'base' ? 'bg-indigo-900 text-indigo-300' : 'bg-emerald-900 text-emerald-300'} uppercase mb-4 inline-block`}>
+                        {exercises[currentExerciseIndex].type === 'base' ? 'Essencial' : 'Complementar'}
+                      </span>
+                      <h2 className="text-3xl font-black text-white leading-tight">{exercises[currentExerciseIndex].name}</h2>
+                      <p className="text-slate-400 mt-2">{exercises[currentExerciseIndex].desc}</p>
+                    </div>
+
+                    <div className="flex flex-col items-center">
+                      {exercises[currentExerciseIndex].isTimed ? (
+                        <CircularProgress 
+                          progress={(workoutTimer / (exercises[currentExerciseIndex].duration || 45)) * 100} 
+                          timeLeft={workoutTimer}
+                          isWarning={workoutTimer <= 3}
+                        />
+                      ) : (
+                        <div className="space-y-6">
+                          <div className="text-7xl font-black text-white flex items-center justify-center gap-6">
+                            <button 
+                              onClick={() => setRepCount(Math.max(0, repCount - 1))}
+                              className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400"
+                            >
+                              <Minus size={24} />
+                            </button>
+                            <span className="w-24">{repCount}</span>
+                            <button 
+                              onClick={() => setRepCount(repCount + 1)}
+                              className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400"
+                            >
+                              <Plus size={24} />
+                            </button>
+                          </div>
+                          <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Repetições Concluídas</p>
+                          <button 
+                            onClick={handleWorkoutStepComplete}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-tighter text-lg shadow-lg shadow-indigo-900/40"
+                          >
+                            Concluir Exercício
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-left">
+                      <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex items-center gap-2">
+                        <Info size={14} /> Dica de Execução
+                      </h4>
+                      <p className="text-xs text-slate-400 italic">{exercises[currentExerciseIndex].obs}</p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {workoutPhase === 'rest' && (
+                  <motion.div
+                    key="rest"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.1 }}
+                    className="space-y-8"
+                  >
+                    <h2 className="text-emerald-400 font-black uppercase tracking-widest text-xl">Descanso</h2>
+                    <div className="text-8xl font-black text-white">{workoutTimer}</div>
+                    <div>
+                      <p className="text-slate-400 text-sm uppercase font-bold mb-2">Próximo:</p>
+                      <h3 className="text-2xl font-bold">{exercises[currentExerciseIndex + 1].name}</h3>
+                    </div>
+                    <button 
+                      onClick={handleWorkoutStepComplete}
+                      className="text-indigo-400 font-bold uppercase text-sm"
+                    >
+                      Pular Descanso
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Footer Navigation */}
+            <div className="p-8 flex justify-between items-center border-t border-slate-900">
+              <button 
+                onClick={prevStep} 
+                disabled={currentExerciseIndex === 0}
+                className="flex items-center gap-2 text-slate-500 disabled:opacity-0"
+              >
+                <ArrowLeft size={20} />
+                <span className="font-bold uppercase text-xs">Anterior</span>
+              </button>
+              
+              {currentExerciseIndex < exercises.length - 1 && (
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-600 uppercase">Próximo</p>
+                  <p className="text-xs font-bold text-slate-400">{exercises[currentExerciseIndex + 1].name}</p>
+                </div>
+              )}
+
+              <button 
+                onClick={nextStep}
+                className="flex items-center gap-2 text-indigo-400"
+              >
+                <span className="font-bold uppercase text-xs">Pular</span>
+                <ArrowRight size={20} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {appScene === 'summary' && (
+          <motion.div 
+            key="summary"
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-md mx-auto p-6 flex flex-col min-h-screen"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+              <div className="w-24 h-24 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.4)]">
+                <CheckCircle2 size={48} className="text-white" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-4xl font-black text-white uppercase tracking-tighter">Treino Concluído!</h2>
+                <p className="text-slate-400">Excelente trabalho na sua recuperação.</p>
+              </div>
+
+              <div className="w-full bg-slate-800 rounded-2xl p-6 space-y-4 border border-slate-700">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest text-left">Resumo da Sessão</h3>
+                <div className="space-y-3">
+                  {exercises.map(ex => (
+                    <div key={ex.id} className="flex items-center justify-between text-left">
+                      <span className="text-sm font-medium text-slate-300">{ex.name}</span>
+                      <CheckCircle2 size={16} className="text-emerald-500" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 py-8">
+              <button 
+                onClick={finishWorkout}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black uppercase tracking-tighter text-lg shadow-lg shadow-indigo-900/40"
+              >
+                Salvar e Voltar
+              </button>
+              <button 
+                onClick={() => setAppScene('dashboard')}
+                className="w-full text-slate-500 font-bold uppercase text-xs"
+              >
+                Descartar Sessão
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      <div className="bg-slate-800 border-l-4 border-indigo-500 p-4 rounded-r-xl shadow-lg">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">
-              {isDayB ? "Protocolo B (Completo)" : "Protocolo A (Base)"}
-            </h2>
-            <p className="text-sm text-slate-400">
-              {isDayB ? "Base + Exercícios Complementares" : "Foco nos exercícios base"}
-            </p>
-          </div>
-          <div className="text-right">
-            <span className="bg-indigo-900 text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
-              {progress}%
-            </span>
-          </div>
-        </div>
-        <div className="w-full bg-slate-700 rounded-full h-1.5 mt-4 overflow-hidden">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            className="bg-indigo-500 h-1.5 rounded-full"
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          ></motion.div>
-        </div>
-      </div>
-
-      <PainScale painLevel={currentRecord.pain} onSetPain={setPainLevel} />
-
-      <PainTrend history={history} />
-
-      <div className="space-y-3">
-        <AnimatePresence mode="popLayout">
-          {exercises.map(ex => (
-            <ExerciseCard 
-              key={ex.id} 
-              exercise={ex} 
-              isDone={currentRecord.exercises.includes(ex.id)} 
-              onToggle={toggleComplete} 
-            />
-          ))}
-        </AnimatePresence>
-      </div>
-
-      {isDayB && <IsometricTimer />}
-
-      <button 
-        onClick={resetDailyProgress} 
-        className="w-full py-3 text-slate-500 text-xs font-semibold hover:text-slate-300 transition-colors"
-      >
-        LIMPAR PROGRESSO DE HOJE
-      </button>
     </div>
   );
 };
