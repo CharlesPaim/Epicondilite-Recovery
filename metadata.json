@@ -1,0 +1,5 @@
+{
+  "name": "Epicondilite Recovery",
+  "description": "Gerenciador de rotina de exercícios para recuperação de epicondilite lateral com lógica de alternância automática.",
+  "requestFramePermissions": []
+}
